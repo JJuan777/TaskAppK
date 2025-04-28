@@ -43,68 +43,147 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.kmcurso.taskapp.addtask.ui.model.TaskModel
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+
 
 @Composable
 fun TasksScreen(taskViewModel: TaskViewModel, innerPadding: PaddingValues) {
-
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val showDialog: Boolean by taskViewModel.showDialog.observeAsState(false)
+    var taskToDelete by remember { mutableStateOf<TaskModel?>(null) }
+
 
     val uiState by produceState<TasksUiState>(
-        initialValue =TasksUiState.Loading,
+        initialValue = TasksUiState.Loading,
         key1 = lifecycle,
         key2 = taskViewModel,
-        ) {
-        lifecycle.repeatOnLifecycle(state = Lifecycle.State.STARTED){
-            taskViewModel.uiState.collect{
+    ) {
+        lifecycle.repeatOnLifecycle(state = Lifecycle.State.STARTED) {
+            taskViewModel.uiState.collect {
                 value = it
             }
         }
     }
 
-    when(uiState){
+    // ✅ Mover estas fuera del when
+    var showEditDialog by remember { mutableStateOf(false) }
+    var selectedTask by remember { mutableStateOf<TaskModel?>(null) }
+
+    when (uiState) {
         is TasksUiState.Error -> {}
         TasksUiState.Loading -> {
             CircularProgressIndicator()
         }
+
         is TasksUiState.Success -> {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding) // Aplica el padding aquí
+                    .padding(innerPadding)
             ) {
                 AddTaskDialog(
                     showDialog,
                     onDismiss = { taskViewModel.onDialogClose() },
-                    onTaskAdded = { taskViewModel.onTaskCreated(it) })
+                    onTaskAdded = { taskViewModel.onTaskCreated(it) }
+                )
+
+                if (showEditDialog && selectedTask != null) {
+                    EditTaskDialog(
+                        show = true,
+                        task = selectedTask!!,
+                        onDismiss = { showEditDialog = false },
+                        onTaskEdited = {
+                            taskViewModel.onTaskEdited(it)
+                            showEditDialog = false
+                        }
+                    )
+                }
+
+                if (taskToDelete != null) {
+                    AlertDialog(
+                        onDismissRequest = { taskToDelete = null },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Advertencia",
+                                    tint = Color(0xFFFFA000), // color ámbar
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text("Eliminar tarea")
+                            }
+                        },
+                        text = { Text("¿Estás seguro de que deseas eliminar esta tarea?") },
+                        confirmButton = {
+                            Button(onClick = {
+                                taskToDelete?.let { taskViewModel.onItemRemove(it) }
+                                taskToDelete = null
+                            }) {
+                                Text("Sí")
+                            }
+                        },
+                        dismissButton = {
+                            Button(onClick = { taskToDelete = null }) {
+                                Text("No")
+                            }
+                        }
+                    )
+                }
+
                 FabDialog(Modifier.align(Alignment.BottomEnd), taskViewModel)
-                TaskList((uiState as TasksUiState.Success).tasks, taskViewModel)
+
+                TaskList(
+                    tasks = (uiState as TasksUiState.Success).tasks,
+                    taskViewModel = taskViewModel,
+                    onDoubleTap = {
+                        selectedTask = it
+                        showEditDialog = true
+                    },
+                    onLongPress = {
+                        taskToDelete = it
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun TaskList(tasks: List<TaskModel>, taskViewModel: TaskViewModel) {
+fun TaskList(
+    tasks: List<TaskModel>,
+    taskViewModel: TaskViewModel,
+    onDoubleTap: (TaskModel) -> Unit,
+    onLongPress: (TaskModel) -> Unit
+) {
     LazyColumn {
         items(tasks, key = { it.id }) { task ->
-          ItemTask(task, taskViewModel)
+            ItemTask(task, taskViewModel, onDoubleTap, onLongPress)
         }
     }
 }
 
+
 @Composable
-fun ItemTask(taskModel: TaskModel, taskViewModel: TaskViewModel) {
+fun ItemTask(
+    taskModel: TaskModel,
+    taskViewModel: TaskViewModel,
+    onDoubleTap: (TaskModel) -> Unit,
+    onLongPress: (TaskModel) -> Unit
+)
+ {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .pointerInput(Unit) {
-                detectTapGestures(onLongPress = {
-                    taskViewModel.onItemRemove(taskModel)
-                })
+                detectTapGestures(
+                    onLongPress = { onLongPress(taskModel) },
+                    onDoubleTap = { onDoubleTap(taskModel) }
+                )
             },
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // ✅ Solución
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -167,6 +246,43 @@ fun AddTaskDialog(show: Boolean, onDismiss: () -> Unit, onTaskAdded: (String) ->
                     myTask = ""
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("Añadir tarea")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditTaskDialog(
+    show: Boolean,
+    task: TaskModel,
+    onDismiss: () -> Unit,
+    onTaskEdited: (TaskModel) -> Unit
+) {
+    var editedText by remember { mutableStateOf(task.task) }
+
+    if (show) {
+        Dialog(onDismissRequest = onDismiss) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(16.dp)
+            ) {
+                Text("Editar tarea", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.size(16.dp))
+                TextField(
+                    value = editedText,
+                    onValueChange = { editedText = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.size(16.dp))
+                Button(onClick = {
+                    onTaskEdited(task.copy(task = editedText)) // Actualiza solo el texto
+                    onDismiss()
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Guardar")
                 }
             }
         }

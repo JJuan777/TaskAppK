@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kmcurso.taskapp.addtask.domain.AddTaskUseCase
 import com.kmcurso.taskapp.addtask.domain.DeleteTaskUseCase
+import com.kmcurso.taskapp.addtask.domain.EditTaskUseCase
 import com.kmcurso.taskapp.addtask.domain.GetTaskUseCase
 import com.kmcurso.taskapp.addtask.domain.UpdateTaskUseCase
 import com.kmcurso.taskapp.addtask.ui.TasksUiState.*
@@ -27,8 +28,15 @@ class TaskViewModel @Inject constructor(
     private val addTaskUseCase: AddTaskUseCase,
     private val updateTaskUseCase: UpdateTaskUseCase,
     private val deleteTaskUseCase: DeleteTaskUseCase,
+    private val editTaskUseCase: EditTaskUseCase,
     getTaskUseCase: GetTaskUseCase
 ) : ViewModel() {
+
+    fun onTaskEdited(task: TaskModel) {
+        viewModelScope.launch {
+            editTaskUseCase(task)
+        }
+    }
 
     val uiState: StateFlow<TasksUiState> = getTaskUseCase()
         .onEach { list -> Log.d("TaskViewModel", "Tasks updated: ${list.size}") }
